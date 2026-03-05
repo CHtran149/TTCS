@@ -5,98 +5,82 @@ GSM::GSM(HardwareSerial &serial, uint32_t baudrate)
     : modem(serial), baud(baudrate) {}
 
 // --- Khởi động modem ---
-bool GSM::begin(int rxPin, int txPin)
+void GSM::begin(int rxPin, int txPin)
 {
     modem.begin(baud, SERIAL_8N1, rxPin, txPin);
-    delay(2000); // chờ modem khởi động cơ bản
-
-    modem.println("AT");
-    return waitForResponse("OK", 5000);
+    delay(12000); // chờ modem ổn định
 }
 
-// --- Chờ phản hồi chuỗi ---
-bool GSM::waitForResponse(const char *target, uint32_t timeout)
+// --- Chờ ký tự phản hồi từ modem ---
+void GSM::waitForChar(char target, uint32_t timeout)
 {
     uint32_t start = millis();
-    String buffer;
-    while (millis() - start < timeout) {
-        while (modem.available()) {
+    while (millis() - start < timeout)
+    {
+        if (modem.available())
+        {
             char c = modem.read();
-            buffer += c;
             Serial.write(c); // log debug
-            if (buffer.indexOf(target) != -1) {
-                return true;
-            }
+            if (c == target) return;
         }
+    }
+}
+
+// Wait for a substring in modem response; returns true if found before timeout
+static bool waitForResponse(HardwareSerial &modemRef, const char *needle, uint32_t timeout)
+{
+    uint32_t start = millis();
+    String buf;
+    while (millis() - start < timeout)
+    {
+        while (modemRef.available()) {
+            char c = modemRef.read();
+            buf += c;
+            // keep buffer bounded
+            if (buf.length() > 512) buf = buf.substring(buf.length() - 512);
+        }
+        if (buf.indexOf(needle) >= 0) return true;
+        delay(10);
     }
     return false;
 }
 
-// --- Gửi SMS với retry ---
-bool GSM::sendSMS(const char *phone, const char *message, int retries)
+// --- Gửi SMS ---
+bool GSM::sendSMS(const char *phone, const char *message)
 {
-    for (int attempt = 0; attempt < retries; attempt++) {
-        modem.println("AT+CMGF=1");
-        if (!waitForResponse("OK", 2000)) continue;
-
-        modem.print("AT+CMGS=\"");
-        modem.print(phone);
-        modem.println("\"");
-
-        if (!waitForResponse(">", 5000)) continue;
-
-        modem.print(message);
-        delay(200);
-        modem.write(26); // Ctrl+Z
-
-        if (waitForResponse("OK", 10000)) {
-            return true; // gửi thành công
-        }
+    // Set text mode
+    modem.println("AT+CMGF=1");
+    if (!waitForResponse(modem, "OK", 2000)) {
+        Serial.println("[GSM] no OK after CMGF");
+        // continue attempt, but report failure
     }
-    return false; // thất bại sau khi retry
-}
 
-// --- Kiểm tra modem đã đăng ký mạng chưa ---
-bool GSM::isRegistered()
-{
-    modem.println("AT+CREG?");
-    if (waitForResponse("+CREG: 0,1", 3000) || waitForResponse("+CREG: 0,5", 3000)) {
-        return true; // đã đăng ký mạng
+    // Start send
+    modem.print("AT+CMGS=\"");
+    modem.print(phone);
+    modem.println("\"");
+
+    // wait for '>' prompt
+    if (!waitForResponse(modem, ">", 5000)) {
+        Serial.println("[GSM] no '>' prompt for CMGS");
+        return false;
     }
+
+    modem.print(message);
+    delay(200);
+    modem.write(26); // Ctrl+Z
+
+    // After sending, modem replies with +CMGS: <mr> and then OK, or ERROR
+    if (waitForResponse(modem, "+CMGS", 15000) || waitForResponse(modem, "OK", 15000)) {
+        return true;
+    }
+
+    // final check for ERROR
+    if (waitForResponse(modem, "ERROR", 1000)) {
+        Serial.println("[GSM] CMGS ERROR");
+        return false;
+    }
+
+    // Default to failure if no positive response
     return false;
-}
-
-// --- Kiểm tra cường độ sóng ---
-int GSM::checkSignalStrength()
-{
-    modem.println("AT+CSQ");
-    uint32_t start = millis();
-    String buffer;
-    while (millis() - start < 3000) {
-        while (modem.available()) {
-            char c = modem.read();
-            buffer += c;
-            if (buffer.indexOf("+CSQ:") != -1) {
-                int rssi = buffer.substring(buffer.indexOf(":") + 1, buffer.indexOf(",")).toInt();
-                return rssi; // giá trị 0–31 (99 = không xác định)
-            }
-        }
-    }
-    return -1; // lỗi
-}
-
-// --- Lấy IMEI ---
-String GSM::getIMEI()
-{
-    modem.println("AT+GSN");
-    uint32_t start = millis();
-    String buffer;
-    while (millis() - start < 3000) {
-        while (modem.available()) {
-            char c = modem.read();
-            buffer += c;
-        }
-    }
-    buffer.trim();
-    return buffer;
 }

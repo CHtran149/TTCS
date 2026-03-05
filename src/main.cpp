@@ -173,66 +173,67 @@ BLYNK_WRITE(V9)
 
 void TaskGSM(void *pvParameters)
 {
-    (void)pvParameters;
-    unsigned long lastAlert = 0;   // thời điểm gửi cảnh báo gần nhất
-    unsigned long lastReport = 0;  // thời điểm gửi báo cáo gần nhất
-    char msgbuf[256];
+	(void)pvParameters;
+	unsigned long lastAlert = 0;   // thời điểm gửi cảnh báo gần nhất
+	unsigned long lastReport = 0;  // thời điểm gửi báo cáo gần nhất
+	char msgbuf[256];
 
-    for (;;) {
-        unsigned long now = millis();
+	auto sendWithRetries = [&](const char *phone, const char *message, int retries)->bool {
+		for (int i = 0; i < retries; ++i) {
+			Serial.printf("[GSM] Sending SMS attempt %d/%d...\n", i+1, retries);
+			if (gsm.sendSMS(phone, message)) {
+				Serial.println("[GSM] SMS sent");
+				return true;
+			}
+			Serial.println("[GSM] SMS send failed, retrying...");
+			vTaskDelay(pdMS_TO_TICKS(3000));
+		}
+		return false;
+	};
 
-        // Kiểm tra trạng thái modem định kỳ
-        if (!gsm.isRegistered()) {
-            Serial.println("GSM modem chưa đăng ký mạng!");
-        } else {
-            int signal = gsm.checkSignalStrength();
-            if (signal >= 0) {
-                Serial.printf("GSM signal strength: %d (0-31, 99=unknown)\n", signal);
-            }
-        }
+	for (;;) {
+		unsigned long now = millis();
 
-        // Lấy snapshot dữ liệu cảm biến
-        SensorData snapshot;
-        if (xSemaphoreTake(g_data_mutex, pdMS_TO_TICKS(200))) {
-            snapshot = g_data;
-            xSemaphoreGive(g_data_mutex);
-        }
+		// Lấy snapshot dữ liệu cảm biến
+		SensorData snapshot;
+		if (xSemaphoreTake(g_data_mutex, pdMS_TO_TICKS(200))) {
+			snapshot = g_data;
+			xSemaphoreGive(g_data_mutex);
+		}
 
-        // --- Cảnh báo vượt ngưỡng ---
-        if (snapshot.power > POWER_ALERT_THRESHOLD && (now - lastAlert >= ALERT_COOLDOWN_MS)) {
-            snprintf(msgbuf, sizeof(msgbuf),
-                     "ALERT: Power exceeded %.1fW -> P=%.1fW V=%.1fV I=%.3fA",
-                     POWER_ALERT_THRESHOLD, snapshot.power, snapshot.voltage, snapshot.current);
+		// --- Cảnh báo vượt ngưỡng ---
+		if (snapshot.power > POWER_ALERT_THRESHOLD && (now - lastAlert >= ALERT_COOLDOWN_MS)) {
+			snprintf(msgbuf, sizeof(msgbuf),
+					 "ALERT: Power exceeded %.1fW -> P=%.1fW V=%.1fV I=%.3fA",
+					 POWER_ALERT_THRESHOLD, snapshot.power, snapshot.voltage, snapshot.current);
 
-            Serial.printf("ALERT: sending SMS to %s: %s\n", PHONE_NUMBER, msgbuf);
+			Serial.printf("ALERT: sending SMS to %s: %s\n", PHONE_NUMBER, msgbuf);
 
-            if (gsm.sendSMS(PHONE_NUMBER, msgbuf, 3)) {
-                Serial.println("SMS alert sent successfully");
-                lastAlert = now;
-            } else {
-                Serial.println("SMS alert failed after retries");
-            }
-        }
+			if (sendWithRetries(PHONE_NUMBER, msgbuf, 3)) {
+				lastAlert = now;
+			} else {
+				Serial.println("SMS alert failed after retries");
+			}
+		}
 
-        // --- Báo cáo định kỳ 5 phút ---
-        if (now - lastReport >= 300000UL) { // 300000 ms = 5 phút
-            snprintf(msgbuf, sizeof(msgbuf),
-                     "Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
-                     snapshot.voltage, snapshot.current, snapshot.power,
-                     snapshot.energy / 1000.0f, snapshot.freq, snapshot.pf);
+		// --- Báo cáo định kỳ 5 phút ---
+		if (now - lastReport >= 300000UL) { // 300000 ms = 5 phút
+			snprintf(msgbuf, sizeof(msgbuf),
+					 "Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
+					 snapshot.voltage, snapshot.current, snapshot.power,
+					 snapshot.energy / 1000.0f, snapshot.freq, snapshot.pf);
 
-            Serial.printf("Sending SMS report to %s: %s\n", PHONE_NUMBER, msgbuf);
+			Serial.printf("Sending SMS report to %s: %s\n", PHONE_NUMBER, msgbuf);
 
-            if (gsm.sendSMS(PHONE_NUMBER, msgbuf, 3)) {
-                Serial.println("SMS report sent successfully");
-                lastReport = now;
-            } else {
-                Serial.println("SMS report failed");
-            }
-        }
+			if (sendWithRetries(PHONE_NUMBER, msgbuf, 3)) {
+				lastReport = now;
+			} else {
+				Serial.println("SMS report failed");
+			}
+		}
 
-        vTaskDelay(pdMS_TO_TICKS(10000)); // kiểm tra mỗi 10 giây
-    }
+		vTaskDelay(pdMS_TO_TICKS(10000)); // kiểm tra mỗi 10 giây
+	}
 }
 
 void setup()
@@ -241,7 +242,7 @@ void setup()
 	delay(100);
 
 	// Configure UARTs with chosen pins
-	Serial1.begin(9600, SERIAL_8N1, PZEM_RX_PIN, PZEM_TX_PIN);
+	Serial1.begin(115200, SERIAL_8N1, PZEM_RX_PIN, PZEM_TX_PIN);
 	Serial2.begin(115200, SERIAL_8N1, GSM_RX_PIN, GSM_TX_PIN);
 
 	// Initialize GSM (this will re-init Serial2 if needed)
