@@ -17,7 +17,7 @@
 #define WIFI_PASS "yxzd5926"
 
 // --- TODO: set phone number for SMS (international format) ---
-#define PHONE_NUMBER "+84979826014"
+#define PHONE_NUMBER "+84327161236"
 
 // UART pins (change to match your board wiring)
 #define PZEM_RX_PIN 44
@@ -173,34 +173,66 @@ BLYNK_WRITE(V9)
 
 void TaskGSM(void *pvParameters)
 {
-	(void)pvParameters;
-	unsigned long lastAlert = 0;
-	char msgbuf[256];
+    (void)pvParameters;
+    unsigned long lastAlert = 0;   // thời điểm gửi cảnh báo gần nhất
+    unsigned long lastReport = 0;  // thời điểm gửi báo cáo gần nhất
+    char msgbuf[256];
 
-	for (;;) {
-		unsigned long now = millis();
+    for (;;) {
+        unsigned long now = millis();
 
-		// Check sensor snapshot
-		SensorData snapshot;
-		if (xSemaphoreTake(g_data_mutex, pdMS_TO_TICKS(200))) {
-			snapshot = g_data;
-			xSemaphoreGive(g_data_mutex);
-		}
+        // Kiểm tra trạng thái modem định kỳ
+        if (!gsm.isRegistered()) {
+            Serial.println("GSM modem chưa đăng ký mạng!");
+        } else {
+            int signal = gsm.checkSignalStrength();
+            if (signal >= 0) {
+                Serial.printf("GSM signal strength: %d (0-31, 99=unknown)\n", signal);
+            }
+        }
 
-		// If power exceeds threshold and cooldown elapsed, send alert SMS
-		if (snapshot.power > POWER_ALERT_THRESHOLD && (now - lastAlert >= ALERT_COOLDOWN_MS)) {
-			snprintf(msgbuf, sizeof(msgbuf),
-					 "ALERT: Power exceeded %.1fW -> P=%.1fW V=%.1fV I=%.3fA",
-					 POWER_ALERT_THRESHOLD, snapshot.power, snapshot.voltage, snapshot.current);
+        // Lấy snapshot dữ liệu cảm biến
+        SensorData snapshot;
+        if (xSemaphoreTake(g_data_mutex, pdMS_TO_TICKS(200))) {
+            snapshot = g_data;
+            xSemaphoreGive(g_data_mutex);
+        }
 
-			Serial.printf("ALERT: sending SMS to %s: %s\n", PHONE_NUMBER, msgbuf);
-			gsm.sendSMS(PHONE_NUMBER, msgbuf);
-			Serial.println("SMS send command issued (alert)");
-			lastAlert = now;
-		}
+        // --- Cảnh báo vượt ngưỡng ---
+        if (snapshot.power > POWER_ALERT_THRESHOLD && (now - lastAlert >= ALERT_COOLDOWN_MS)) {
+            snprintf(msgbuf, sizeof(msgbuf),
+                     "ALERT: Power exceeded %.1fW -> P=%.1fW V=%.1fV I=%.3fA",
+                     POWER_ALERT_THRESHOLD, snapshot.power, snapshot.voltage, snapshot.current);
 
-		vTaskDelay(pdMS_TO_TICKS(1000));
-	}
+            Serial.printf("ALERT: sending SMS to %s: %s\n", PHONE_NUMBER, msgbuf);
+
+            if (gsm.sendSMS(PHONE_NUMBER, msgbuf, 3)) {
+                Serial.println("SMS alert sent successfully");
+                lastAlert = now;
+            } else {
+                Serial.println("SMS alert failed after retries");
+            }
+        }
+
+        // --- Báo cáo định kỳ 5 phút ---
+        if (now - lastReport >= 300000UL) { // 300000 ms = 5 phút
+            snprintf(msgbuf, sizeof(msgbuf),
+                     "Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
+                     snapshot.voltage, snapshot.current, snapshot.power,
+                     snapshot.energy / 1000.0f, snapshot.freq, snapshot.pf);
+
+            Serial.printf("Sending SMS report to %s: %s\n", PHONE_NUMBER, msgbuf);
+
+            if (gsm.sendSMS(PHONE_NUMBER, msgbuf, 3)) {
+                Serial.println("SMS report sent successfully");
+                lastReport = now;
+            } else {
+                Serial.println("SMS report failed");
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10000)); // kiểm tra mỗi 10 giây
+    }
 }
 
 void setup()
