@@ -67,6 +67,17 @@ static SemaphoreHandle_t g_data_mutex = NULL;
 static float energy_offset_kwh = 0.0f; // baseline (kWh) to allow resetting displayed energy
 static Preferences prefs;
 
+// --- WHITELIST số điện thoại ---
+const char* allowedNumbers[] = {"+84327161236", "+84977435825"};
+const int allowedCount = sizeof(allowedNumbers) / sizeof(allowedNumbers[0]);
+
+bool isAllowedSender(const String& sender) {
+    for (int i = 0; i < allowedCount; i++) {
+        if (sender.equals(allowedNumbers[i])) return true;
+    }
+    return false;
+}
+
 // WiFi diagnostic: print status, IP and DNS lookup for blynk.cloud
 void wifiDiagnostics()
 {
@@ -218,23 +229,23 @@ void TaskGSM(void *pvParameters)
 			}
 		}
 
-		        String sender, content;
-        if (gsm.readSMS(sender, content)) {
-            Serial.printf("[GSM] SMS received from %s: %s\n", sender.c_str(), content.c_str());
+		String sender, content;
+		while (gsm.readSMS(sender, content)) {
+    		Serial.printf("[GSM] SMS received from %s: %s\n", sender.c_str(), content.c_str());
 
-            // Nếu nội dung là "REQUEST" thì gửi lại dữ liệu PZEM
-            if (content.equalsIgnoreCase("REQUEST")) {
-                snprintf(msgbuf, sizeof(msgbuf),
-                         "Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
-                         snapshot.voltage, snapshot.current, snapshot.power,
-                         snapshot.energy / 1000.0f, snapshot.freq, snapshot.pf);
+    		if (isAllowedSender(sender) && content.equalsIgnoreCase("REQUEST")) {
+        		snprintf(msgbuf, sizeof(msgbuf),
+                 	"Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
+                 	snapshot.voltage, snapshot.current, snapshot.power,
+                 	snapshot.energy / 1000.0f, snapshot.freq, snapshot.pf);
 
-                Serial.printf("[GSM] Sending report to %s\n", sender.c_str());
-                sendWithRetries(sender.c_str(), msgbuf, 3);
-            }
-        }
-
-
+        		Serial.printf("[GSM] Sending report to %s\n", sender.c_str());
+        		sendWithRetries(sender.c_str(), msgbuf, 3);
+    		} else {
+        		Serial.println("[GSM] Unauthorized sender or invalid command");
+    		}
+		
+		}
 		// --- Báo cáo định kỳ 5 phút ---
 		// if (now - lastReport >= 300000UL) { // 300000 ms = 5 phút
 		// 	snprintf(msgbuf, sizeof(msgbuf),
