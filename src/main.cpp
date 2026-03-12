@@ -179,7 +179,6 @@ void TaskGSM(void *pvParameters)
 	unsigned long lastAlert = 0;   // thời điểm gửi cảnh báo gần nhất
 	unsigned long lastReport = 0;  // thời điểm gửi báo cáo gần nhất
 	char msgbuf[256];
-	String smsBuffer = "";
 
 	auto sendWithRetries = [&](const char *phone, const char *message, int retries)->bool {
 		for (int i = 0; i < retries; ++i) {
@@ -195,28 +194,6 @@ void TaskGSM(void *pvParameters)
 	};
 
 	for (;;) {
-		// ===== CHECK SMS =====
-        while (Serial2.available()) {
-
-            char c = Serial2.read();
-            Serial.write(c);
-
-            smsBuffer += c;
-
-            if (c == '\n') {
-
-                smsBuffer.trim();
-
-                if (smsBuffer.indexOf("HA") >= 0) {
-
-                    Serial.println("[GSM] HA received");
-
-                    gsm.sendSMS(PHONE_NUMBER, "hello chien tran");
-                }
-
-                smsBuffer = "";
-            }
-        }
 		unsigned long now = millis();
 
 		// Lấy snapshot dữ liệu cảm biến
@@ -240,6 +217,23 @@ void TaskGSM(void *pvParameters)
 				Serial.println("SMS alert failed after retries");
 			}
 		}
+
+		        String sender, content;
+        if (gsm.readSMS(sender, content)) {
+            Serial.printf("[GSM] SMS received from %s: %s\n", sender.c_str(), content.c_str());
+
+            // Nếu nội dung là "REQUEST" thì gửi lại dữ liệu PZEM
+            if (content.equalsIgnoreCase("REQUEST")) {
+                snprintf(msgbuf, sizeof(msgbuf),
+                         "Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
+                         snapshot.voltage, snapshot.current, snapshot.power,
+                         snapshot.energy / 1000.0f, snapshot.freq, snapshot.pf);
+
+                Serial.printf("[GSM] Sending report to %s\n", sender.c_str());
+                sendWithRetries(sender.c_str(), msgbuf, 3);
+            }
+        }
+
 
 		// --- Báo cáo định kỳ 5 phút ---
 		// if (now - lastReport >= 300000UL) { // 300000 ms = 5 phút

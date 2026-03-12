@@ -15,6 +15,8 @@ public:
 
     void begin(int rxPin, int txPin);
     bool sendSMS(const char *phone, const char *message);
+
+    bool readSMS(String &sender, String &content);
 };
 
 #endif

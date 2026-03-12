@@ -84,3 +84,34 @@ bool GSM::sendSMS(const char *phone, const char *message)
     // Default to failure if no positive response
     return false;
 }
+
+bool GSM::readSMS(String &sender, String &content) {
+    String buf;
+    while (modem.available()) {
+        char c = modem.read();
+        buf += c;
+        // giữ buffer không quá dài
+        if (buf.length() > 512) buf = buf.substring(buf.length() - 512);
+    }
+
+    // Kiểm tra chuỗi +CMT (SMS đến)
+    int idx = buf.indexOf("+CMT:");
+    if (idx >= 0) {
+        // Tìm dòng tiếp theo (nội dung SMS)
+        int start = buf.indexOf("\n", idx);
+        if (start >= 0 && start + 1 < buf.length()) {
+            content = buf.substring(start + 1);
+            content.trim();
+            // parse số điện thoại nếu cần (ở header +CMT)
+            int quote1 = buf.indexOf("\"", idx);
+            int quote2 = buf.indexOf("\"", quote1 + 1);
+            if (quote1 >= 0 && quote2 > quote1) {
+                sender = buf.substring(quote1 + 1, quote2);
+            } else {
+                sender = "UNKNOWN";
+            }
+            return true;
+        }
+    }
+    return false;
+}
