@@ -11,6 +11,7 @@
 #include <BlynkSimpleEsp32.h>
 #include "pzem004t.h"
 #include "GSM.h"
+#include "OLED.h"
 
 // --- TODO: set your WiFi credentials ---
 #define WIFI_SSID "ChinaNet-GefHkJ"
@@ -49,6 +50,7 @@
 
 PZEM004T pzem(Serial1);
 GSM gsm(Serial2, 115200);
+OLED oled(128, 64);
 
 struct SensorData {
 	float voltage;
@@ -240,22 +242,60 @@ void TaskGSM(void *pvParameters)
 		}
 
 		// --- Báo cáo định kỳ 5 phút ---
-		if (now - lastReport >= 300000UL) { // 300000 ms = 5 phút
-			snprintf(msgbuf, sizeof(msgbuf),
-					 "Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
-					 snapshot.voltage, snapshot.current, snapshot.power,
-					 snapshot.energy / 1000.0f, snapshot.freq, snapshot.pf);
+		// if (now - lastReport >= 300000UL) { // 300000 ms = 5 phút
+		// 	snprintf(msgbuf, sizeof(msgbuf),
+		// 			 "Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
+		// 			 snapshot.voltage, snapshot.current, snapshot.power,
+		// 			 snapshot.energy / 1000.0f, snapshot.freq, snapshot.pf);
 
-			Serial.printf("Sending SMS report to %s: %s\n", PHONE_NUMBER, msgbuf);
+		// 	Serial.printf("Sending SMS report to %s: %s\n", PHONE_NUMBER, msgbuf);
 
-			if (sendWithRetries(PHONE_NUMBER, msgbuf, 3)) {
-				lastReport = now;
-			} else {
-				Serial.println("SMS report failed");
-			}
-		}
+		// 	if (sendWithRetries(PHONE_NUMBER, msgbuf, 3)) {
+		// 		lastReport = now;
+		// 	} else {
+		// 		Serial.println("SMS report failed");
+		// 	}
+		// }
 
 		vTaskDelay(pdMS_TO_TICKS(10000)); // kiểm tra mỗi 10 giây
+	}
+}
+
+void TaskDisplay(void *pvParameters)
+{
+	(void)pvParameters;
+	char buf[64];
+
+	for (;;) {
+		SensorData snapshot;
+		if (xSemaphoreTake(g_data_mutex, pdMS_TO_TICKS(200))) {
+			snapshot = g_data;
+			xSemaphoreGive(g_data_mutex);
+		}
+
+		// Prepare display
+		oled.clear();
+
+		// Line spacing for 6 lines on 64px height
+		int y = 0;
+		snprintf(buf, sizeof(buf), "V: %.1f V", snapshot.voltage);
+		oled.printText(0, y, String(buf)); y += 10;
+
+		snprintf(buf, sizeof(buf), "I: %.3f A", snapshot.current);
+		oled.printText(0, y, String(buf)); y += 10;
+
+		snprintf(buf, sizeof(buf), "P: %.1f W", snapshot.power);
+		oled.printText(0, y, String(buf)); y += 10;
+
+		snprintf(buf, sizeof(buf), "E: %.3f kWh", snapshot.energy / 1000.0f);
+		oled.printText(0, y, String(buf)); y += 10;
+
+		snprintf(buf, sizeof(buf), "f: %.1f Hz  pf: %.2f", snapshot.freq, snapshot.pf);
+		oled.printText(0, y, String(buf)); y += 10;
+
+		oled.display();
+
+		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
 }
 
@@ -265,7 +305,7 @@ void setup()
 	delay(100);
 
 	// Configure UARTs with chosen pins
-	Serial1.begin(115200, SERIAL_8N1, PZEM_RX_PIN, PZEM_TX_PIN);
+	Serial1.begin(9600, SERIAL_8N1, PZEM_RX_PIN, PZEM_TX_PIN);
 	Serial2.begin(115200, SERIAL_8N1, GSM_RX_PIN, GSM_TX_PIN);
 
 	// Initialize GSM (this will re-init Serial2 if needed)
@@ -307,10 +347,18 @@ void setup()
 	energy_offset_kwh = prefs.getFloat("energy_off", 0.0f);
 	Serial.printf("Loaded energy_offset_kwh=%.3f\n", energy_offset_kwh);
 
+	// Initialize OLED (SDA=13, SCL=12 typical for many ESP32 boards)
+	if (!oled.begin(13, 12, 0x3C)) {
+		Serial.println("OLED init failed");
+	} else {
+		Serial.println("OLED initialized");
+	}
+
 	// Create tasks
 	xTaskCreatePinnedToCore(TaskPZEM, "PZEMTask", 4096, NULL, 2, NULL, 1);
 	xTaskCreatePinnedToCore(TaskBlynk, "BlynkTask", 8192, NULL, 1, NULL, 1);
 	xTaskCreatePinnedToCore(TaskGSM,  "GSMTask",  4096, NULL, 1, NULL, 1);
+	xTaskCreatePinnedToCore(TaskDisplay, "DisplayTask", 4096, NULL, 1, NULL, 1);
 
 	// setup done; loop() will be empty
 }
