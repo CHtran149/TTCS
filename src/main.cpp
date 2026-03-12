@@ -177,6 +177,7 @@ void TaskGSM(void *pvParameters)
 	unsigned long lastAlert = 0;   // thời điểm gửi cảnh báo gần nhất
 	unsigned long lastReport = 0;  // thời điểm gửi báo cáo gần nhất
 	char msgbuf[256];
+	String smsBuffer = "";
 
 	auto sendWithRetries = [&](const char *phone, const char *message, int retries)->bool {
 		for (int i = 0; i < retries; ++i) {
@@ -192,6 +193,28 @@ void TaskGSM(void *pvParameters)
 	};
 
 	for (;;) {
+		// ===== CHECK SMS =====
+        while (Serial2.available()) {
+
+            char c = Serial2.read();
+            Serial.write(c);
+
+            smsBuffer += c;
+
+            if (c == '\n') {
+
+                smsBuffer.trim();
+
+                if (smsBuffer.indexOf("HA") >= 0) {
+
+                    Serial.println("[GSM] HA received");
+
+                    gsm.sendSMS(PHONE_NUMBER, "hello chien tran");
+                }
+
+                smsBuffer = "";
+            }
+        }
 		unsigned long now = millis();
 
 		// Lấy snapshot dữ liệu cảm biến
@@ -247,6 +270,11 @@ void setup()
 
 	// Initialize GSM (this will re-init Serial2 if needed)
 	gsm.begin(GSM_RX_PIN, GSM_TX_PIN);
+	Serial2.println("AT+CMGF=1");
+	delay(500);
+
+	Serial2.println("AT+CNMI=2,2,0,0,0");
+	delay(500);
 
 	// Note: pzem.begin() would call Serial1.begin(baud) without pins,
 	// so we already configured Serial1 with pins above and skip pzem.begin()
