@@ -3,30 +3,28 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include "blynk_config.h"
+#include "pzem004t.h" // Nhớ include các class để trình biên dịch hiểu
+#include "GSM.h"
+#include "OLED.h"
 
-// Sensor data structure
 struct SensorData {
-	float voltage;
-	float current;
-	float power;
-	float energy;
-	float freq;
-	float pf;
+    float voltage;
+    float current;
+    float power;
+    float energy;
+    float freq;
+    float pf;
 };
 
-// Extern declarations for global variables
+// Khai báo extern để dùng chung giữa các file .cpp
 extern SensorData g_data;
 extern SemaphoreHandle_t g_data_mutex;
 extern float energy_offset_kwh;
 extern Preferences prefs;
 
-// Extern object declarations
-class PZEM004T;
-class GSM;
-class OLED;
-
 extern PZEM004T pzem;
 extern GSM gsm;
 extern OLED oled;
 
-#endif // GLOBALS_H
+#endif
