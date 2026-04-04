@@ -17,6 +17,10 @@ public:
     bool sendSMS(const char *phone, const char *message);
 
     bool readSMS(String &sender, String &content);
+    // Non-blocking scanner: returns true if `needle` has been seen in modem response buffer
+    bool scanFor(const char *needle);
+    // Flush internal response buffer (drop accumulated modem bytes)
+    void flushRX();
 };
 
 #endif
