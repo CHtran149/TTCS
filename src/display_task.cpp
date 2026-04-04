@@ -10,8 +10,10 @@ void TaskDisplay(void *pvParameters)
 
 	for (;;) {
 		SensorData snapshot;
+		float current_threshold = 0.0f;
 		if (xSemaphoreTake(g_data_mutex, pdMS_TO_TICKS(200))) {
 			snapshot = g_data;
+			current_threshold = g_power_alert_threshold;
 			xSemaphoreGive(g_data_mutex);
 		}
 
@@ -30,6 +32,9 @@ void TaskDisplay(void *pvParameters)
 		oled.printText(0, y, String(buf)); y += 10;
 
 		snprintf(buf, sizeof(buf), "E: %.3f kWh", snapshot.energy / 1000.0f);
+		oled.printText(0, y, String(buf)); y += 10;
+
+		snprintf(buf, sizeof(buf), "TH: %.1fW", current_threshold);
 		oled.printText(0, y, String(buf)); y += 10;
 
 		snprintf(buf, sizeof(buf), "f: %.1f Hz  pf: %.2f", snapshot.freq, snapshot.pf);

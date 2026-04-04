@@ -65,15 +65,35 @@ static void extractPendingHeaders() {
     }
 }
 
-static bool waitForResponse(HardwareSerial &modemRef, const char *needle, uint32_t /*timeout*/)
+static bool waitForResponse(HardwareSerial &modemRef, const char *needle, uint32_t timeout)
 {
-    while (modemRef.available()) {
-        char c = modemRef.read();
-        respBuf += c;
-        Serial.write(c);
-        if (respBuf.length() > 4096) respBuf = respBuf.substring(respBuf.length() - 2048);
+    uint32_t start = millis();
+    // If timeout==0 -> non-blocking: drain available bytes once
+    if (timeout == 0) {
+        while (modemRef.available()) {
+            char c = modemRef.read();
+            respBuf += c;
+            Serial.write(c);
+            if (respBuf.length() > 4096) respBuf = respBuf.substring(respBuf.length() - 2048);
+        }
+        extractPendingHeaders();
+        return respBuf.indexOf(needle) >= 0;
     }
-    // extract unsolicited +CMT headers into pending slot
+
+    // Blocking mode: wait until needle appears or timeout expires
+    while (millis() - start < timeout) {
+        while (modemRef.available()) {
+            char c = modemRef.read();
+            respBuf += c;
+            Serial.write(c);
+            if (respBuf.length() > 4096) respBuf = respBuf.substring(respBuf.length() - 2048);
+        }
+        // extract unsolicited +CMT headers into pending slot
+        extractPendingHeaders();
+        if (respBuf.indexOf(needle) >= 0) return true;
+        delay(10);
+    }
+    // final check
     extractPendingHeaders();
     return respBuf.indexOf(needle) >= 0;
 }
@@ -81,9 +101,12 @@ static bool waitForResponse(HardwareSerial &modemRef, const char *needle, uint32
 // --- Gửi SMS ---
 bool GSM::sendSMS(const char *phone, const char *message)
 {
+    // Clear any pending modem response data to avoid mixing with outgoing message
+    flushRX();
+
     // Set text mode
     modem.println("AT+CMGF=1");
-    if (!waitForResponse(modem, "OK", 2000)) {
+    if (!waitForResponse(modem, "OK", 3000)) {
         Serial.println("[GSM] no OK after CMGF");
         // continue attempt, but report failure
     }
@@ -93,14 +116,16 @@ bool GSM::sendSMS(const char *phone, const char *message)
     modem.print(phone);
     modem.println("\"");
 
-    // wait for '>' prompt
-    if (!waitForResponse(modem, ">", 5000)) {
+    // wait for '>' prompt (allow a bit more time)
+    if (!waitForResponse(modem, ">", 8000)) {
         Serial.println("[GSM] no '>' prompt for CMGS");
         return false;
     }
 
     modem.print(message);
-    delay(200);
+    // give the serial transmitter a short time to push the message bytes
+    // this reduces chance Ctrl+Z being sent before message bytes queued
+    delay(50 + strlen(message) / 10);
     modem.write(26); // Ctrl+Z
 
     // After sending, modem replies with +CMGS: <mr> and then OK, or ERROR
@@ -109,6 +134,8 @@ bool GSM::sendSMS(const char *phone, const char *message)
     uint32_t start = millis();
     while (millis() - start < 15000) {
         if (waitForResponse(modem, "+CMGS", 0) || waitForResponse(modem, "OK", 0)) {
+            // consume leftover data so it won't be mistaken for incoming SMS
+            flushRX();
             return true;
         }
         if (waitForResponse(modem, "ERROR", 0)) {
@@ -125,7 +152,13 @@ bool GSM::readSMS(String &sender, String &content)
 {
     // If a pending header was previously detected by the scanner, and content now exists
     if (pendingHeader) {
-        if (!modem.available()) return false; // wait for content next loop
+        // Wait a short time for the message body to arrive (modem may stream slowly)
+        uint32_t start = millis();
+        while (!modem.available() && (millis() - start) < 3000) {
+            // allow other code to run briefly
+            delay(10);
+        }
+        if (!modem.available()) return false; // still no content
         content = modem.readStringUntil('\n');
         content.trim();
         sender = pendingSender;

@@ -23,6 +23,9 @@ extern SemaphoreHandle_t g_data_mutex;
 extern float energy_offset_kwh;
 extern Preferences prefs;
 
+// Ngưỡng cảnh báo công suất (W)
+extern float g_power_alert_threshold;
+
 extern PZEM004T pzem;
 extern GSM gsm;
 extern OLED oled;

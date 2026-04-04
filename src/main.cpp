@@ -23,6 +23,8 @@ SensorData g_data = {0};
 SemaphoreHandle_t g_data_mutex = NULL;
 float energy_offset_kwh = 0.0f;
 Preferences prefs;
+// Default threshold; will be overwritten from prefs in setup()
+float g_power_alert_threshold = 300.0f;
 
 void wifiDiagnostics() {
     Serial.print("WiFi status: "); Serial.println(WiFi.status());
@@ -56,6 +58,8 @@ void setup() {
     
     prefs.begin("pzem", false);
     energy_offset_kwh = prefs.getFloat("energy_off", 0.0f);
+    // Load saved power threshold (default 300W)
+    g_power_alert_threshold = prefs.getFloat("power_th", 300.0f);
 
     if (!oled.begin(21, 22, 0x3C)) {
         Serial.println("OLED failed");
