@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include "blynk_config.h"
 #include "pzem004t.h" // Nhớ include các class để trình biên dịch hiểu
 #include "GSM.h"
@@ -29,5 +31,8 @@ extern float g_power_alert_threshold;
 extern PZEM004T pzem;
 extern GSM gsm;
 extern OLED oled;
+
+// Queue for sending data to cloud task
+extern QueueHandle_t cloud_queue;
 
 #endif
