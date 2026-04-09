@@ -14,6 +14,7 @@
 #define VP_ENERGY V4
 #define VP_FREQ V5
 #define VP_PF V6
+#define VP_THRESHOLD V10
 
 #define BLYNK_SEND_INTERVAL_MS 5000
 
@@ -31,14 +32,39 @@ BLYNK_WRITE(V9) {
     }
 }
 
+BLYNK_WRITE(VP_THRESHOLD) {
+    float val = param.asFloat();
+
+    if (val > 0) {
+        g_power_alert_threshold = val;
+        prefs.putFloat("power_th", g_power_alert_threshold);
+
+        Serial.print("[BLYNK] Threshold updated: ");
+        Serial.println(g_power_alert_threshold);
+    }
+}
+
 void setupBlynkHandlers() {
     Serial.println("Blynk handlers ready");
 }
 
 void TaskBlynk(void *pvParameters) {
-    unsigned long lastSend = 0;
+     unsigned long lastSend = 0;
+     static float lastThreshold = -1;
+     static bool synced = false;
     for (;;) {
         Blynk.run();
+
+         if (!synced && Blynk.connected()) {
+         Blynk.virtualWrite(VP_THRESHOLD, g_power_alert_threshold);
+         synced = true;
+      }
+
+
+        if (g_power_alert_threshold != lastThreshold && Blynk.connected()) {
+        Blynk.virtualWrite(VP_THRESHOLD, g_power_alert_threshold);
+         lastThreshold = g_power_alert_threshold;
+        }
 
         unsigned long now = millis();
         if (now - lastSend >= BLYNK_SEND_INTERVAL_MS) {

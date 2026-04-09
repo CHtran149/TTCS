@@ -38,7 +38,7 @@ void setup() {
     Serial.begin(9600);
     delay(100);
     
-    Serial1.begin(9600, SERIAL_8N1, 14, 12);
+    Serial1.begin(9600, SERIAL_8N1, 14, 12); // PZEM RX=14, TX=12
     Serial2.begin(115200, SERIAL_8N1, 16, 17);
 
     gsm.begin(16, 17);
