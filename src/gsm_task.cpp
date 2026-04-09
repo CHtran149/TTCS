@@ -40,17 +40,23 @@ void TaskGSM(void *pvParameters)
 
 		// --- Cảnh báo vượt ngưỡng ---
 		if (snapshot.power > g_power_alert_threshold && (now - lastAlert >= ALERT_COOLDOWN_MS)) {
+			Serial.printf("[GSM] ALERT check: P=%.1f TH=%.1f sinceLast=%lu\n", snapshot.power, g_power_alert_threshold, (now - lastAlert));
 			snprintf(msgbuf, sizeof(msgbuf),
 				 "ALERT: Power exceeded %.1fW -> P=%.1fW V=%.1fV I=%.3fA",
 				 g_power_alert_threshold, snapshot.power, snapshot.voltage, snapshot.current);
 
 			// prefer owner phone from preferences if available, fall back to compile-time PHONE_NUMBER
-			String owner = prefs.getString("owner_phone", PHONE_NUMBER);
+			String owner = prefs.getString("owner_phone", "");
 			owner.trim();
+			const char *destPhone = nullptr;
+			if (owner.length() > 3) {
+				destPhone = owner.c_str();
+			} else {
+				destPhone = PHONE_NUMBER;
+			}
+			Serial.printf("[GSM] ALERT: sending SMS to %s: %s\n", destPhone, msgbuf);
 
-			Serial.printf("[GSM] ALERT: sending SMS to %s: %s\n", owner.c_str(), msgbuf);
-
-			if (sendWithRetries(owner.c_str(), msgbuf, 3)) {
+			if (sendWithRetries(destPhone, msgbuf, 3)) {
 				lastAlert = now;
 			} else {
 				Serial.println("[GSM] SMS alert failed after retries");
@@ -98,6 +104,22 @@ void TaskGSM(void *pvParameters)
 						Serial.printf("[GSM] Power threshold updated to %.1fW by %s\n", g_power_alert_threshold, sender.c_str());
 					} else {
 						snprintf(msgbuf, sizeof(msgbuf), "ERR: invalid value '%s'", numStr.c_str());
+						handled = true;
+					}
+				}
+				// also support SET OWNER=+84... to configure alert recipient
+				int q = contentUp.indexOf("OWNER=");
+				if (q >= 0) {
+					int startIdx = q + 6; // after OWNER=
+					String numStr = content.substring(startIdx);
+					numStr.trim();
+					if (numStr.length() > 3) {
+						prefs.putString("owner_phone", numStr);
+						handled = true;
+						snprintf(msgbuf, sizeof(msgbuf), "OK: Owner phone set to %s", numStr.c_str());
+						Serial.printf("[GSM] Owner phone updated to %s by %s\n", numStr.c_str(), sender.c_str());
+					} else {
+						snprintf(msgbuf, sizeof(msgbuf), "ERR: invalid owner '%s'", numStr.c_str());
 						handled = true;
 					}
 				}

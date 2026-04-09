@@ -94,11 +94,11 @@ void setup() {
 
     // Create cloud queue and start cloud task
     cloud_queue = xQueueCreate(10, sizeof(CloudData));
-    if (cloud_queue != NULL) {
-        xTaskCreatePinnedToCore(TaskCloud, "CloudTask", 8192, NULL, 1, NULL, 1);
-    } else {
-        Serial.println("Failed to create cloud_queue");
-    }
+    // if (cloud_queue != NULL) {
+    //     xTaskCreatePinnedToCore(TaskCloud, "CloudTask", 8192, NULL, 1, NULL, 1);
+    // } else {
+    //     Serial.println("Failed to create cloud_queue");
+    // }
 
     xTaskCreatePinnedToCore(TaskPZEM, "PZEMTask", 4096, NULL, 2, NULL, 1);
     xTaskCreatePinnedToCore(TaskBlynk, "BlynkTask", 8192, NULL, 1, NULL, 1);
