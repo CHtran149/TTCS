@@ -39,30 +39,34 @@ void TaskGSM(void *pvParameters)
 		}
 
 		// --- Cảnh báo vượt ngưỡng ---
-		if (snapshot.power > g_power_alert_threshold && (now - lastAlert >= ALERT_COOLDOWN_MS)) {
-			Serial.printf("[GSM] ALERT check: P=%.1f TH=%.1f sinceLast=%lu\n", snapshot.power, g_power_alert_threshold, (now - lastAlert));
-			snprintf(msgbuf, sizeof(msgbuf),
-				 "ALERT: Power exceeded %.1fW -> P=%.1fW V=%.1fV I=%.3fA",
-				 g_power_alert_threshold, snapshot.power, snapshot.voltage, snapshot.current);
+		static bool wasOver = false;
 
-			// prefer owner phone from preferences if available, fall back to compile-time PHONE_NUMBER
-			String owner = prefs.getString("owner_phone", "");
-			owner.trim();
-			const char *destPhone = nullptr;
-			if (owner.length() > 3) {
-				destPhone = owner.c_str();
-			} else {
-				destPhone = PHONE_NUMBER;
-			}
-			Serial.printf("[GSM] ALERT: sending SMS to %s: %s\n", destPhone, msgbuf);
+		if (snapshot.power > g_power_alert_threshold) {
 
-			if (sendWithRetries(destPhone, msgbuf, 3)) {
-				lastAlert = now;
-			} else {
-				Serial.println("[GSM] SMS alert failed after retries");
-			}
-		}
+    		if (!wasOver) {
+        	Serial.printf("[GSM] ALERT TRIGGER: P=%.1f TH=%.1f\n",
+                      snapshot.power, g_power_alert_threshold);
 
+        	snprintf(msgbuf, sizeof(msgbuf),
+            "ALERT: Power exceeded %.1fW -> P=%.1fW V=%.1fV I=%.3fA",
+            g_power_alert_threshold, snapshot.power, snapshot.voltage, snapshot.current);
+
+        	String owner = prefs.getString("owner_phone", "");
+        	owner.trim();
+
+        	const char *destPhone = (owner.length() > 3) ? owner.c_str() : PHONE_NUMBER;
+
+        	Serial.printf("[GSM] ALERT: sending SMS to %s: %s\n", destPhone, msgbuf);
+
+        	sendWithRetries(destPhone, msgbuf, 3);
+
+        	wasOver = true;
+    }
+
+} else {
+    // reset khi không còn vượt ngưỡng
+    wasOver = false;
+}
 		String sender, content;
 		while (gsm.readSMS(sender, content)) {
 			Serial.printf("[GSM] SMS received from %s: %s\n", sender.c_str(), content.c_str());
