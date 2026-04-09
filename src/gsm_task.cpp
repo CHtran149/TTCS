@@ -44,12 +44,16 @@ void TaskGSM(void *pvParameters)
 				 "ALERT: Power exceeded %.1fW -> P=%.1fW V=%.1fV I=%.3fA",
 				 g_power_alert_threshold, snapshot.power, snapshot.voltage, snapshot.current);
 
-			Serial.printf("ALERT: sending SMS to %s: %s\n", PHONE_NUMBER, msgbuf);
+			// prefer owner phone from preferences if available, fall back to compile-time PHONE_NUMBER
+			String owner = prefs.getString("owner_phone", PHONE_NUMBER);
+			owner.trim();
 
-			if (sendWithRetries(PHONE_NUMBER, msgbuf, 3)) {
+			Serial.printf("[GSM] ALERT: sending SMS to %s: %s\n", owner.c_str(), msgbuf);
+
+			if (sendWithRetries(owner.c_str(), msgbuf, 3)) {
 				lastAlert = now;
 			} else {
-				Serial.println("SMS alert failed after retries");
+				Serial.println("[GSM] SMS alert failed after retries");
 			}
 		}
 
@@ -115,9 +119,7 @@ void TaskGSM(void *pvParameters)
 			}
 
 		}
-	}
-		
-		// --- Báo cáo định kỳ 5 phút ---
+			// --- Báo cáo định kỳ 5 phút ---
 		// if (now - lastReport >= 300000UL) { // 300000 ms = 5 phút
 		// 	snprintf(msgbuf, sizeof(msgbuf),
 		// 			 "Report: V=%.1fV I=%.3fA P=%.1fW E=%.3fkWh f=%.1fHz pf=%.2f",
@@ -133,6 +135,7 @@ void TaskGSM(void *pvParameters)
 		// 	}
 		// }
 
-		vTaskDelay(pdMS_TO_TICKS(10000)); // kiểm tra mỗi 10 giây
+	vTaskDelay(pdMS_TO_TICKS(10000)); // kiểm tra mỗi 10 giây
+	}
 }
 
