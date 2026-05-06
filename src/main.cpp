@@ -59,19 +59,24 @@ void setup() {
 
     // Initialize time via NTP so timestamps are correct for cloud uploads (UTC+7)
     if (WiFi.status() == WL_CONNECTED) {
-        // Set timezone to Vietnam (UTC+7) and initialize NTP
+        // Thiết lập múi giờ Việt Nam
         setenv("TZ", "Asia/Ho_Chi_Minh", 1);
         tzset();
+
+        // Đồng bộ NTP
         configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com");
+
         Serial.print("Waiting for NTP time");
-        time_t now = time(NULL);
-        unsigned long start = millis();
-        while (now < 1600000000 && millis() - start < 10000) {
+        time_t now = 0;
+        int retries = 0;
+        while (now < 1600000000 && retries < 30) { // chờ tối đa ~15 giây
             delay(500);
             Serial.print('.');
             now = time(NULL);
+            retries++;
         }
         Serial.println();
+
         if (now < 1600000000) {
             Serial.println("Warning: NTP time not set");
         } else {
@@ -80,6 +85,7 @@ void setup() {
             Serial.printf("Current time: %s", asctime(&timeinfo));
         }
     }
+
 
     setupBlynkHandlers();
     
@@ -94,11 +100,11 @@ void setup() {
 
     // Create cloud queue and start cloud task
     cloud_queue = xQueueCreate(10, sizeof(CloudData));
-    // if (cloud_queue != NULL) {
-    //     xTaskCreatePinnedToCore(TaskCloud, "CloudTask", 8192, NULL, 1, NULL, 1);
-    // } else {
-    //     Serial.println("Failed to create cloud_queue");
-    // }
+    if (cloud_queue != NULL) {
+        xTaskCreatePinnedToCore(TaskCloud, "CloudTask", 8192, NULL, 1, NULL, 1);
+    } else {
+        Serial.println("Failed to create cloud_queue");
+    }
 
     xTaskCreatePinnedToCore(TaskPZEM, "PZEMTask", 4096, NULL, 2, NULL, 1);
     xTaskCreatePinnedToCore(TaskBlynk, "BlynkTask", 8192, NULL, 1, NULL, 1);
