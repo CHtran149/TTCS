@@ -13,7 +13,9 @@ static const char* CLOUD_SHARED_TOKEN = "REPLACE_WITH_SECRET_TOKEN";
 // Number of retries/delays can be tuned
 void TaskCloud(void *pvParameters) {
     (void)pvParameters;
-    CloudData data;
+    CloudData lastData;
+    bool haveLast = false;
+    uint32_t lastSendMs = 0;
 
     for (;;) {
         if (cloud_queue == NULL) {
@@ -21,9 +23,18 @@ void TaskCloud(void *pvParameters) {
             continue;
         }
 
-        if (xQueueReceive(cloud_queue, &data, portMAX_DELAY) == pdTRUE) {
+        // Try to pull updates from the queue (non-blocking with timeout).
+        CloudData incoming;
+        if (xQueueReceive(cloud_queue, &incoming, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            lastData = incoming;
+            haveLast = true;
+        }
+
+        // Send at most once per 60 seconds (if we have any data).
+        uint32_t now = millis();
+        if (haveLast && (lastSendMs == 0 || now - lastSendMs >= 60000)) {
             // 1. Xử lý thời gian
-            time_t t = data.epoch ? (time_t)data.epoch : time(NULL);
+            time_t t = lastData.epoch ? (time_t)lastData.epoch : time(NULL);
             struct tm tm_info;
             localtime_r(&t, &tm_info);
             char timestr[32];
@@ -60,10 +71,10 @@ void TaskCloud(void *pvParameters) {
             }
 
             payload += (payload.length() ? "&" : "");
-            payload += "voltage=" + urlEncode(String(data.voltage, 2));
-            payload += "&current=" + urlEncode(String(data.current, 3));
-            payload += "&power=" + urlEncode(String(data.power, 2));
-            payload += "&energy=" + urlEncode(String(data.energy, 3));
+            payload += "voltage=" + urlEncode(String(lastData.voltage, 2));
+            payload += "&current=" + urlEncode(String(lastData.current, 3));
+            payload += "&power=" + urlEncode(String(lastData.power, 2));
+            payload += "&energy=" + urlEncode(String(lastData.energy, 3));
 
             // 4. Append token if configured and send with retries + backoff
             if (CLOUD_SHARED_TOKEN && strlen(CLOUD_SHARED_TOKEN) > 0) {
@@ -83,7 +94,6 @@ void TaskCloud(void *pvParameters) {
                 Serial.printf("Cloud: attempt %d payload=%s\n", attempt, payload.c_str());
 
                 WiFiClientSecure client;
-                // For quick testing we keep insecure; for production use client.setCACert(root_ca_pem)
                 client.setInsecure();
                 HTTPClient https;
 
@@ -118,6 +128,8 @@ void TaskCloud(void *pvParameters) {
             if (!sent) {
                 Serial.println("Cloud: giving up after retries");
             }
+
+            lastSendMs = now;
         }
     }
 }
