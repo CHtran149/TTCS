@@ -13,7 +13,7 @@ OLED::OLED(uint8_t width, uint8_t height) {
 }
 
 // --- Khởi động màn hình ---
-bool OLED::begin(uint8_t sda, uint8_t scl, uint8_t address) {
+bool OLED::begin(uint8_t sda, uint8_t scl, uint8_t address) { 
 
     _config.sda = sda;
     _config.scl = scl;
