@@ -31,12 +31,16 @@ void TaskGSM(void *pvParameters)
 	for (;;) {
 		unsigned long now = millis();
 
-		// Lấy snapshot dữ liệu cảm biến
+		// Lấy snapshot dữ liệu cảm biến từ sensor_queue (PZEM gửi vào đây)
 		SensorData snapshot;
-		if (xSemaphoreTake(g_data_mutex, pdMS_TO_TICKS(200))) {
-			snapshot = g_data;
-			xSemaphoreGive(g_data_mutex);
+		static SensorData lastSnapshot = {0};
+		if (sensor_queue != NULL) {
+			// wait up to 200ms for a new sample; if none, reuse lastSnapshot
+			if (xQueueReceive(sensor_queue, &lastSnapshot, pdMS_TO_TICKS(200)) != pdTRUE) {
+				// no new sample, keep lastSnapshot
+			}
 		}
+		snapshot = lastSnapshot;
 
 		// --- Cảnh báo vượt ngưỡng ---
 		static bool wasOver = false;

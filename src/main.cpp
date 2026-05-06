@@ -28,6 +28,7 @@ Preferences prefs;
 // Default threshold; will be overwritten from prefs in setup()
 float g_power_alert_threshold = 300.0f;
 QueueHandle_t cloud_queue = NULL;
+QueueHandle_t sensor_queue = NULL;
 
 void wifiDiagnostics() {
     Serial.print("WiFi status: "); Serial.println(WiFi.status());
@@ -104,6 +105,12 @@ void setup() {
         xTaskCreatePinnedToCore(TaskCloud, "CloudTask", 8192, NULL, 1, NULL, 1);
     } else {
         Serial.println("Failed to create cloud_queue");
+    }
+
+    // Create sensor queue (PZEM -> other tasks like GSM)
+    sensor_queue = xQueueCreate(10, sizeof(SensorData));
+    if (sensor_queue == NULL) {
+        Serial.println("Failed to create sensor_queue");
     }
 
     xTaskCreatePinnedToCore(TaskPZEM, "PZEMTask", 4096, NULL, 2, NULL, 1);

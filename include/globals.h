@@ -34,5 +34,7 @@ extern OLED oled;
 
 // Queue for sending data to cloud task
 extern QueueHandle_t cloud_queue;
+// Queue for delivering sensor snapshots between tasks (PZEM -> consumers)
+extern QueueHandle_t sensor_queue;
 
 #endif

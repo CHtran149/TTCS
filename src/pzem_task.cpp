@@ -39,6 +39,18 @@ void TaskPZEM(void *pvParameters)
 					cd.energy = g_data.energy / 1000.0f; // convert to kWh if needed
 					xQueueSend(cloud_queue, &cd, 0);
 				}
+
+				// Also send a sensor snapshot to sensor_queue for other consumers (e.g., GSM)
+				if (sensor_queue != NULL) {
+					SensorData sd;
+					sd.voltage = g_data.voltage;
+					sd.current = g_data.current;
+					sd.power = g_data.power;
+					sd.energy = g_data.energy;
+					sd.freq = g_data.freq;
+					sd.pf = g_data.pf;
+					xQueueSend(sensor_queue, &sd, 0);
+				}
 			}
 		}
 		vTaskDelay(pdMS_TO_TICKS(PZEM_READ_INTERVAL_MS));
